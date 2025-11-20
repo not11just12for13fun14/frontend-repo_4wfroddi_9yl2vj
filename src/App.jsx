@@ -1,71 +1,98 @@
+import { useMemo, useState } from 'react'
+import { motion } from 'framer-motion'
+import Header from './components/Header'
+import Footer from './components/Footer'
+import BookingFlow from './components/BookingFlow'
+import Restaurant from './components/Restaurant'
+import Confirmation from './components/Confirmation'
+
+function formatDate(d){
+  if(!d) return ''
+  const dd = new Date(d)
+  return dd.toISOString().split('T')[0]
+}
+
 function App() {
+  const [phase, setPhase] = useState('book') // book -> dine -> confirm
+  const [booking, setBooking] = useState(null)
+  const [restaurantItems, setRestaurantItems] = useState([])
+  const baseUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
+
+  const handleBooked = ({ selectedLocation, checkIn, checkOut, checkInTime, checkOutTime }) => {
+    setBooking({ selectedLocation, checkIn, checkOut, checkInTime, checkOutTime })
+    setPhase('dine')
+  }
+
+  const submitBooking = async () => {
+    const payload = {
+      guest_name: 'Guest',
+      email: 'guest@example.com',
+      location: booking.selectedLocation.name,
+      check_in_date: formatDate(booking.checkIn),
+      check_out_date: formatDate(booking.checkOut),
+      check_in_time: booking.checkInTime,
+      check_out_time: booking.checkOutTime,
+      restaurant_addons: restaurantItems.map(i=>({ name: i.name, price: i.price, quantity: i.quantity }))
+    }
+    const res = await fetch(`${baseUrl}/api/book`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+    const data = await res.json()
+    const nights = Math.ceil((new Date(booking.checkOut) - new Date(booking.checkIn)) / (1000*60*60*24))
+    const pricePer = booking.selectedLocation.price_per_night
+    const accommodationTotal = nights * pricePer
+    const restaurantTotal = restaurantItems.reduce((a,i)=>a+i.price*i.quantity,0)
+    const total = accommodationTotal + restaurantTotal
+    setPhase('confirm')
+    setBooking(b => ({ ...b, bookingId: data.booking_id, nights, pricePer, accommodationTotal, restaurantTotal, total }))
+  }
+
+  const reset = () => {
+    setPhase('book')
+    setBooking(null)
+    setRestaurantItems([])
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
-      {/* Subtle pattern overlay */}
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(59,130,246,0.05),transparent_50%)]"></div>
+    <div className="min-h-screen bg-gradient-to-b from-teal-900 via-emerald-900 to-slate-900 relative">
+      <div className="absolute inset-0 bg-[radial-gradient(1200px_500px_at_-10%_-10%,rgba(255,255,255,0.18),transparent),radial-gradient(800px_400px_at_110%_10%,rgba(255,255,255,0.12),transparent)] pointer-events-none" />
 
-      <div className="relative min-h-screen flex items-center justify-center p-8">
-        <div className="max-w-2xl w-full">
-          {/* Header with Flames icon */}
-          <div className="text-center mb-12">
-            <div className="inline-flex items-center justify-center mb-6">
-              <img
-                src="/flame-icon.svg"
-                alt="Flames"
-                className="w-24 h-24 drop-shadow-[0_0_25px_rgba(59,130,246,0.5)]"
-              />
+      <Header />
+
+      <main className="relative z-10">
+        <section className="mx-auto max-w-7xl px-6 pt-6">
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-8">
+            <h2 className="text-4xl md:text-5xl font-extrabold text-white tracking-tight">Luxury Tropical Stays</h2>
+            <p className="mt-3 text-white/70">Glassy minimal design, soft gradients, and buttery animations.</p>
+          </motion.div>
+
+          {phase === 'book' && (
+            <div className="space-y-10">
+              <BookingFlow onBooked={handleBooked} />
             </div>
+          )}
 
-            <h1 className="text-5xl font-bold text-white mb-4 tracking-tight">
-              Flames Blue
-            </h1>
-
-            <p className="text-xl text-blue-200 mb-6">
-              Build applications through conversation
-            </p>
-          </div>
-
-          {/* Instructions */}
-          <div className="bg-slate-800/50 backdrop-blur-sm border border-blue-500/20 rounded-2xl p-8 shadow-xl mb-6">
-            <div className="flex items-start gap-4 mb-6">
-              <div className="flex-shrink-0 w-8 h-8 bg-blue-500 text-white rounded-lg flex items-center justify-center font-bold">
-                1
-              </div>
-              <div>
-                <h3 className="font-semibold text-white mb-1">Describe your idea</h3>
-                <p className="text-blue-200/80 text-sm">Use the chat panel on the left to tell the AI what you want to build</p>
-              </div>
+          {phase === 'dine' && (
+            <div className="space-y-6 text-white">
+              <Restaurant initialCart={restaurantItems} onDone={(cart)=>{ setRestaurantItems(cart); submitBooking() }} />
             </div>
+          )}
 
-            <div className="flex items-start gap-4 mb-6">
-              <div className="flex-shrink-0 w-8 h-8 bg-blue-500 text-white rounded-lg flex items-center justify-center font-bold">
-                2
-              </div>
-              <div>
-                <h3 className="font-semibold text-white mb-1">Watch it build</h3>
-                <p className="text-blue-200/80 text-sm">Your app will appear in this preview as the AI generates the code</p>
-              </div>
-            </div>
+          {phase === 'confirm' && booking && (
+            <Confirmation onReset={reset} bookingSummary={{
+              bookingId: booking.bookingId,
+              location: booking.selectedLocation.name,
+              checkIn: formatDate(booking.checkIn),
+              checkOut: formatDate(booking.checkOut),
+              checkInTime: booking.checkInTime,
+              checkOutTime: booking.checkOutTime,
+              nights: booking.nights,
+              restaurantItems,
+              total: booking.total,
+            }} />
+          )}
+        </section>
+      </main>
 
-            <div className="flex items-start gap-4">
-              <div className="flex-shrink-0 w-8 h-8 bg-blue-500 text-white rounded-lg flex items-center justify-center font-bold">
-                3
-              </div>
-              <div>
-                <h3 className="font-semibold text-white mb-1">Refine and iterate</h3>
-                <p className="text-blue-200/80 text-sm">Continue the conversation to add features and make changes</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Footer */}
-          <div className="text-center">
-            <p className="text-sm text-blue-300/60">
-              No coding required • Just describe what you want
-            </p>
-          </div>
-        </div>
-      </div>
+      <Footer />
     </div>
   )
 }
